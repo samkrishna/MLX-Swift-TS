@@ -21,11 +21,13 @@ import Testing
 // Results side by side
 // ─────────────────────────────────────────────────────────────────────────────────────────
 //
-//   Transform           TimesFM 2.5            TimesFM 3.0 fp32         TimesFM 3.0 fp16
-//   ──────────────────  ─────────────────────  ───────────────────────  ───────────────────────
-//   none (raw)          1,389,242  (−36%)      3,433,329  (+58%)        3,243,936  (+49%)
-//   log                 2,299,482  (+5.6%)     2,182,360  (+0.19%)      2,182,363  (+0.19%)
-//   ratio F(n)/F(n-1)   2,181,586  (+0.15%)    2,183,295  (+0.23%)      2,183,358  (+0.23%)
+//   Transform           2.5 fp16             2.5 fp32             3.0 fp32             3.0 fp16
+//   ──────────────────  ───────────────────  ───────────────────  ───────────────────  ───────────────────
+//   none (raw)          1,389,242  (−36.2%)  1,389,695  (−36.2%)  3,433,327  (+57.6%)  3,243,824  (+48.9%)
+//   log                 2,299,482  (+5.56%)  2,298,598  (+5.52%)  2,182,361  (+0.19%)  2,182,363  (+0.19%)
+//   ratio F(n)/F(n-1)   2,181,586  (+0.15%)  2,181,586  (+0.15%)  2,183,296  (+0.23%)  2,183,357  (+0.23%)
+//
+// (The 2.5 columns come from TimesFMFibonacciTests.)
 //
 // Three things stand out:
 //
@@ -39,10 +41,12 @@ import Testing
 //      model removes that line exactly, forecasts only the small wiggle left over, then adds
 //      the line back. The transform we chose and the model's own preprocessing now stack.
 //
-//   3. fp16 vs fp32 hardly matters for log and ratio (the answers agree to about 0.003%),
-//      but moves the raw forecast by about 190,000. When the model is this unsure, tiny
-//      changes in the weights move the median a lot. Rounding error is not a fixed percentage:
-//      it gets amplified exactly where the model's answer is least trustworthy anyway.
+//   3. For 3.0, fp16 vs fp32 hardly matters for log and ratio (the answers agree to about
+//      0.003%), but moves the raw forecast by about 190,000. When the model is this unsure,
+//      tiny changes in the weights move the median a lot. For 2.5, fp16 vs fp32 moves every
+//      case by at most 0.04%: its raw forecast is wrong but *confident*, so it isn't sensitive.
+//      Rounding error is not a fixed percentage: it gets amplified where the model's answer is
+//      least certain.
 //
 // ─────────────────────────────────────────────────────────────────────────────────────────
 // How TimesFM 3.0 processes any input (the same for all three tests)

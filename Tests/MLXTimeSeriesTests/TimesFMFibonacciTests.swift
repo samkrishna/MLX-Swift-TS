@@ -12,12 +12,13 @@ import Testing
 //
 // and ask it for the 33rd, F(32) = 2_178_309.
 //
-// PRECISION: these tests use fp16 weights. The checkpoint is kunal732's
-// timesfm-2.5-200m-transformers-mlx, which stores every weight as float16 (472 MB), rounded
-// from Google's float32 release (925 MB). The loader converts them to float32 and the model
-// computes in float32 (`TimesFMModel.inferenceDtype`), so the only precision lost is that
-// one-time rounding of the stored weights. Every "Observed" number below comes from that
-// fp16 checkpoint. Google's exact fp32 weights would give slightly different numbers.
+// PRECISION: every test runs twice, once per stored precision (see TimesFMVariants.swift):
+//   - TimesFM 2.5 fp16: kunal732's timesfm-2.5-200m-transformers-mlx, which stores every weight
+//     as float16 (472 MB). Each weight is exactly Google's float32 value rounded to float16.
+//   - TimesFM 2.5 fp32: converted/timesfm25-fp32, Google's exact float32 weights (925 MB).
+// Both compute in float32 (`TimesFMModel.inferenceDtype`), so the only difference is that
+// one-time rounding of the stored weights. The "Observed" comments give both numbers; they
+// differ by at most ~0.04% here.
 //
 // ─────────────────────────────────────────────────────────────────────────────────────────
 // THE CORE IDEA: transform → forecast → transform back
@@ -62,11 +63,11 @@ import Testing
 //
 // The three tests below apply this to Fibonacci:
 //
-//   Transform           What TimesFM sees                        Result for F(32)
-//   ──────────────────  ───────────────────────────────────────  ────────────────────────
-//   none (raw)          flat line, then a sudden spike at the end  1,389,242  (−36%)
-//   log                 an almost straight line (slope ≈ 0.48)      2,299,482  (+5.6%)
-//   ratio F(n)/F(n-1)   wobbles, then settles at 1.618…             2,181,586  (+0.15%)
+//   Transform           What TimesFM sees                          F(32), fp16          F(32), fp32
+//   ──────────────────  ─────────────────────────────────────────  ───────────────────  ───────────────────
+//   none (raw)          flat line, then a sudden spike at the end  1,389,242  (−36.2%)  1,389,695  (−36.2%)
+//   log                 an almost straight line (slope ≈ 0.48)      2,299,482  (+5.56%)  2,298,598  (+5.52%)
+//   ratio F(n)/F(n-1)   wobbles, then settles at 1.618…             2,181,586  (+0.150%) 2,181,586  (+0.150%)
 //
 // None of them gives exactly 2,178,309. TimesFM approximates.
 //
@@ -86,11 +87,14 @@ import Testing
 // - For every step it returns a mean plus 9 quantiles (10%, 20%, ..., 90%). The 50% quantile,
 //   the median, is the point forecast and is returned as `prediction.mean`.
 
+/// The TimesFM 2.5 checkpoints on this machine: fp16 and/or fp32.
+let timesFM25FibonacciModels = [TimesFMVariant.v25fp16, .v25fp32].filter(\.isAvailable)
+
 @Suite(
     "TimesFM 2.5 Fibonacci walkthrough",
     // These tests need the real 200M-parameter checkpoint. Random weights would forecast
     // noise, so skip rather than fail when it isn't on this machine.
-    .enabled(if: FileManager.default.fileExists(atPath: timesFM25Checkpoint.path)),
+    .enabled(if: !timesFM25FibonacciModels.isEmpty),
     // Run one at a time: each test loads its own copy of the model (~800 MB in float32).
     .serialized)
 struct TimesFMFibonacciTests {
@@ -154,11 +158,11 @@ struct TimesFMFibonacciTests {
 
     // MARK: 1. Raw values (no transform)
 
-    @Test("Raw values: TimesFM can't follow exponential growth")
-    func testRawFibonacci() throws {
+    @Test("Raw values: TimesFM can't follow exponential growth", arguments: timesFM25FibonacciModels)
+    func testRawFibonacci(model: TimesFMVariant) throws {
         // Load the pretrained model the same way ModelArena does (config.json + weights).
-        // Weights are stored as fp16 and computed in fp32 (see PRECISION at the top).
-        let forecaster = try loadTimesFM25Forecaster()
+        // `model` is the fp16 or the fp32 checkpoint; both compute in fp32 (see PRECISION).
+        let forecaster = try model.load()
 
         // ── Transform: none. Just convert Int → Float, since the model works in floats.
         // Float32 stores whole numbers exactly up to 2^24 = 16,777,216, so every value here
@@ -179,20 +183,21 @@ struct TimesFMFibonacciTests {
 
         // ── Transform back: none needed. The model already undid its own normalization, so
         // `next.median` is in real units.
-        print("[Fibonacci raw] F(32) median \(next.median), 10–90% [\(next.low), \(next.high)], truth \(expected33rd)")
+        print("[Fibonacci raw \(model.name)] F(32) median \(next.median), 10–90% [\(next.low), \(next.high)], truth \(expected33rd)")
 
-        // Observed: median ≈ 1,389,000, only ~3% above F(31). The truth, 2,178,309, sits
-        // just above even the 90% quantile (~2,165,000). The model is confident growth
-        // slows down. Exponential growth is the one shape it has learned *not* to trust.
+        // Observed (fp16 / fp32): median ≈ 1,389,242 / 1,389,695, only ~3% above F(31). The
+        // truth, 2,178,309, sits just above even the 90% quantile (≈ 2,165,219 / 2,166,033).
+        // The model is confident growth slows down. Exponential growth is the one shape it has
+        // learned *not* to trust. Rounding the weights to fp16 moved the median by only ~450.
         #expect(next.median < 0.8 * Float(expected33rd))  // way short of the truth...
         #expect(next.median > Float(history.last!))  // ...though it does expect *some* rise
     }
 
     // MARK: 2. Log transform
 
-    @Test("Log values: exponential growth becomes a straight line (~6% error)")
-    func testLogFibonacci() throws {
-        let forecaster = try loadTimesFM25Forecaster()
+    @Test("Log values: exponential growth becomes a straight line (~6% error)", arguments: timesFM25FibonacciModels)
+    func testLogFibonacci(model: TimesFMVariant) throws {
+        let forecaster = try model.load()
 
         // ── Transform: natural log.
         // Fibonacci grows like φ^n / √5, where φ = 1.618... Taking logs:
@@ -215,20 +220,21 @@ struct TimesFMFibonacciTests {
         let median = exp(next.median)
         let low = exp(next.low)
         let high = exp(next.high)
-        print("[Fibonacci log] F(32) median \(median), 10–90% [\(low), \(high)], truth \(expected33rd)")
+        print("[Fibonacci log \(model.name)] F(32) median \(median), 10–90% [\(low), \(high)], truth \(expected33rd)")
 
-        // Observed: ≈ 2,299,000, about 5.6% high. The model is off by only 0.054 in log space
-        // (14.648 vs 14.594). exp turns that into a *multiplicative* error:
-        // e^0.054 ≈ 1.056, i.e. +5.6%. Small log errors become percentage errors.
+        // Observed (fp16 / fp32): ≈ 2,299,482 / 2,298,598, about 5.5–5.6% high. The model is off
+        // by only 0.054 in log space (14.648 vs 14.594). exp turns that into a *multiplicative*
+        // error: e^0.054 ≈ 1.056, i.e. +5.6%. Small log errors become percentage errors.
+        // The fp16/fp32 gap (~880) is also multiplied up by exp: ~0.0004 in log space.
         let relativeError = abs(median - Float(expected33rd)) / Float(expected33rd)
         #expect(relativeError < 0.10)
     }
 
     // MARK: 3. Ratio transform
 
-    @Test("Ratios F(n)/F(n-1): converge to φ, forecast within 1%")
-    func testRatioFibonacci() throws {
-        let forecaster = try loadTimesFM25Forecaster()
+    @Test("Ratios F(n)/F(n-1): converge to φ, forecast within 1%", arguments: timesFM25FibonacciModels)
+    func testRatioFibonacci(model: TimesFMVariant) throws {
+        let forecaster = try model.load()
 
         // Keep the integers around: the inverse transform will need F(31).
         let fib = fibonacci(32)
@@ -256,12 +262,13 @@ struct TimesFMFibonacciTests {
         // The 80% interval converts the same way. Multiplying by a positive number keeps order.
         let low = next.low * Float(fib[31])
         let high = next.high * Float(fib[31])
-        print("[Fibonacci ratio] next ratio \(next.median) (φ = \(golden)), F(32) ≈ \(estimate), 10–90% [\(low), \(high)], truth \(expected33rd)")
+        print("[Fibonacci ratio \(model.name)] next ratio \(next.median) (φ = \(golden)), F(32) ≈ \(estimate), 10–90% [\(low), \(high)], truth \(expected33rd)")
 
         // Observed: ratio ≈ 1.6205 vs φ = 1.6180, an error of 0.0024. Relative to φ that's
         // 0.0024 / 1.618 ≈ 0.15%, which carries straight through the multiplication:
-        // F(32) ≈ 2,181,600, about 0.15% high. Still not exactly 2,178,309. It's a
-        // good approximation, not a calculation.
+        // F(32) ≈ 2,181,586, about 0.15% high, for fp16 and fp32 alike (they differ in the 7th
+        // digit of the ratio). Still not exactly 2,178,309. It's a good approximation, not a
+        // calculation.
         #expect(abs(next.median - golden) < 0.01)
         let relativeError = abs(estimate - Float(expected33rd)) / Float(expected33rd)
         #expect(relativeError < 0.01)
