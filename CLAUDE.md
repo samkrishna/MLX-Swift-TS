@@ -10,6 +10,14 @@ Read LESSONS.md before starting work.
   path, grep for the old path and confirm xcodebuild output shows the suite's printed
   golden/Fibonacci lines, not a skip.
 - Pass env vars to tests as `TEST_RUNNER_<NAME>=...` on the xcodebuild command line.
+- Numbers in test comments (e.g. "Observed" lines) must be copied from an xcodebuild run of
+  that exact test on each checkpoint variant. Never write them from estimates or
+  exploration output.
+
+## Docs
+- When a change adds or renames a converter model type, flag, or `converted/<folder>` that
+  tests depend on, update README.md (Converting Models, Running the Tests, Project
+  Structure) in the same commit. Run every command you document, or say it was not run.
 
 ## Porting or fixing a model
 - Before writing tests, diff the checkpoint's safetensors header shapes against

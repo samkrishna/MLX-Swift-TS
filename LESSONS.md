@@ -32,3 +32,15 @@ Written by /aar-loop after each session's After Action Review. Read this file be
 - Actual: TimesFM3FibonacciTests showed fp32 3,433,327 vs fp16 3,243,824 on raw Fibonacci, a 5.5% gap; log and ratio gaps were ~1e-7 and ~3e-5.
 - Why: Where the model is uncertain, its median sits on a flat part of the output distribution, so tiny weight changes move it far; the first estimate only sampled confident inputs. Context only, no file fix.
 - tags: precision,fp16,timesfm3
+
+## 2026-09-28 -- Numbers written into test comments (the 'Observed' lines in TimesFMIntuitionTests.swift, Fibonacci tests) must be copied from an xcodebuild run of that exact test on that exact checkpoint; anything estimated beforehand or from a different variant has been wrong.
+- Expected: Observed figures and explanations drafted alongside the 11 intuition tests would match the final runs.
+- Actual: Several were wrong after the first full run: squares raw 2.5 worst error 2.9%, seasonality 2.5 log 0.99%, prime-gaps off-by-one (history included the gap being forecast), and my explanation for 2.5's narrow random-walk interval was wrong (128 steps fit one pass; 2.5 is just overconfident far ahead).
+- Why: Comments were written from expectation and exploration-harness output, not from the parameterized test's own output across all four variants; a sorting step in the forecast helper had also changed the 2.5 median. Fix applied: CLAUDE.md.
+- tags: testing,comments,timesfm,fix-applied
+
+## 2026-09-28 -- When a change adds or renames a converter model type, flag, or converted/<folder> that tests depend on, update README.md (Converting Models, Running the Tests, Project Structure) in the same commit, and run or explicitly mark unverified every command you document.
+- Expected: README.md, the project's front door, described how to convert the models the tests need.
+- Actual: After the whole TimesFM 3 port the README still showed only Toto conversion: no --dtype (fp16 default), no --model-type, no timesfm25-fp32/timesfm3-fp32/timesfm3-fp16 folder names, no test-running instructions; commands lived only in TimesFM-Pedagogy.md and Swift doc comments. Found only when the user asked. The README fix (commit 326a5af) documented the 2.5 Hub-ID converter command without having re-run it; re-run afterwards into a scratch folder, it produced a model.safetensors byte-identical (same sha256) to converted/timesfm25-fp32, config.json identical.
+- Why: Docs were added where the work was happening (pedagogy doc, test comments) and nothing prompted a README check; README is not touched by tests or builds. Fix applied: CLAUDE.md.
+- tags: docs,readme,converter,fix-applied
