@@ -12,6 +12,13 @@ import Testing
 //
 // and ask it for the 33rd, F(32) = 2_178_309.
 //
+// PRECISION: these tests use fp16 weights. The checkpoint is kunal732's
+// timesfm-2.5-200m-transformers-mlx, which stores every weight as float16 (472 MB), rounded
+// from Google's float32 release (925 MB). The loader converts them to float32 and the model
+// computes in float32 (`TimesFMModel.inferenceDtype`), so the only precision lost is that
+// one-time rounding of the stored weights. Every "Observed" number below comes from that
+// fp16 checkpoint. Google's exact fp32 weights would give slightly different numbers.
+//
 // ─────────────────────────────────────────────────────────────────────────────────────────
 // THE CORE IDEA: transform → forecast → transform back
 // ─────────────────────────────────────────────────────────────────────────────────────────
@@ -150,6 +157,7 @@ struct TimesFMFibonacciTests {
     @Test("Raw values: TimesFM can't follow exponential growth")
     func testRawFibonacci() throws {
         // Load the pretrained model the same way ModelArena does (config.json + weights).
+        // Weights are stored as fp16 and computed in fp32 (see PRECISION at the top).
         let forecaster = try loadTimesFM25Forecaster()
 
         // ── Transform: none. Just convert Int → Float, since the model works in floats.
