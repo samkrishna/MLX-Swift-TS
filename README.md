@@ -148,6 +148,46 @@ python Scripts/convert_ts_model.py \
 
 The model type is auto-detected from the HuggingFace ID. You can also pass `--q-bits 2` or `--q-bits 8`, and `--q-group-size` to control the quantization group size (default: 64).
 
+| Flag | Meaning |
+|------|---------|
+| `--hf-path` | HuggingFace ID or a local checkpoint folder |
+| `--mlx-path` | Output folder (`config.json` + `model.safetensors`) |
+| `--dtype` | Stored precision: `float16` (**default**) or `float32`. fp32 keeps Google's exact weights; fp16 is half the size and is the fp32 file rounded. |
+| `--model-type` | Override auto-detection. Needed when `--hf-path` is a local folder whose name doesn't reveal the model (e.g. `--model-type timesfm` for 2.5). |
+
+### TimesFM checkpoints
+
+The TimesFM test suites look for these exact folders under `converted/` (git-ignored). Run from the repo root:
+
+```bash
+# TimesFM 2.5, fp32 (Google's weights)
+python Scripts/convert_ts_model.py --hf-path google/timesfm-2.5-200m-pytorch \
+  --model-type timesfm --mlx-path converted/timesfm25-fp32 --dtype float32
+
+# TimesFM 3.0, fp32 (Google's weights, the reference baseline)
+python Scripts/convert_ts_model.py --hf-path google/timesfm-3.0-pytorch \
+  --mlx-path converted/timesfm3-fp32 --dtype float32
+
+# TimesFM 3.0, fp16 (converter default, half the size)
+python Scripts/convert_ts_model.py --hf-path google/timesfm-3.0-pytorch \
+  --mlx-path converted/timesfm3-fp16
+```
+
+The TimesFM 2.5 fp16 checkpoint is not converted locally; the tests use the pre-converted `kunal732/timesfm-2.5-200m-transformers-mlx` from the Hugging Face cache. Google ships fp32 only, and both versions compute in float32 regardless of stored precision. TimesFM 3.0 is licensed for non-commercial use. See [TimesFM-Pedagogy.md](TimesFM-Pedagogy.md) for how to use these models and how fp16 vs fp32 compares.
+
+## Running the Tests
+
+Use `xcodebuild`; `swift build` / `swift test` fail compiling mlx-swift's `.metal` files. On a fresh Xcode, install the Metal toolchain once:
+
+```bash
+xcodebuild -downloadComponent MetalToolchain
+
+xcodebuild test -scheme mlxtoto-Package -destination 'platform=macOS' \
+  -only-testing:MLXTimeSeriesTests/TimesFM3GoldenTests
+```
+
+Tests that need converted weights are **skipped, not failed, when the folder is missing**, so check the output for the suite you care about. Override a location with `TEST_RUNNER_TIMESFM3_FP32_DIR` / `TEST_RUNNER_TIMESFM3_FP16_DIR` (xcodebuild only forwards variables with the `TEST_RUNNER_` prefix). Golden values in `Tests/MLXTimeSeriesTests/Fixtures/` come from Google's reference code via `Scripts/timesfm25_golden.py` and `Scripts/timesfm3_golden.py`.
+
 ### Upload to HuggingFace
 
 Add `--upload-repo` to push the converted model to HuggingFace Hub with an auto-generated model card:
@@ -180,8 +220,8 @@ MLX-Swift-TS/
 ├── Libraries/
 │   └── MLXTimeSeries/
 │       ├── Core/                        # TimeSeriesModel protocol, factory, config
-│       ├── Models/                      # Chronos, Chronos2, TimesFM, LagLlama,
-│       │                                  FlowState, Kairos, TiRex
+│       ├── Models/                      # Chronos, Chronos2, TimesFM, TimesFM3,
+│       │                                  LagLlama, FlowState, Kairos, TiRex
 │       ├── Model/                       # Toto + shared transformer components
 │       ├── Layers/                      # Distribution heads
 │       ├── Distribution/                # Student-t mixture
@@ -189,6 +229,8 @@ MLX-Swift-TS/
 │       └── Inference/                   # TimeSeriesForecaster, KV cache
 ├── Scripts/
 │   ├── convert_ts_model.py              # Model conversion script
+│   ├── timesfm25_golden.py              # Golden values from Google's TimesFM 2.5
+│   ├── timesfm3_golden.py               # Golden values from Google's TimesFM 3.0
 │   └── requirements.txt
 ├── Applications/
 │   ├── ModelArena/                      # macOS + iOS model comparison app
