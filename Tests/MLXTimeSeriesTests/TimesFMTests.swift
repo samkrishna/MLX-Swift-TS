@@ -245,7 +245,7 @@ struct TimesFMTests {
 // MARK: - Golden values vs. upstream reference
 
 /// Local TimesFM 2.5 checkpoint. Override with TIMESFM25_CHECKPOINT; tests skip if absent.
-private let timesFM25Checkpoint: URL = {
+let timesFM25Checkpoint: URL = {
     if let path = ProcessInfo.processInfo.environment["TIMESFM25_CHECKPOINT"] {
         return URL(fileURLWithPath: path)
     }
@@ -259,6 +259,33 @@ private let timesFM25Checkpoint: URL = {
 private let timesFM25Golden = URL(fileURLWithPath: #filePath)
     .deletingLastPathComponent()
     .appending(path: "Fixtures/timesfm25_golden.json")
+
+/// Config exactly as published in kunal732/timesfm-2.5-200m-transformers-mlx (legacy keys).
+private let timesFM25HubConfig = """
+    {"model_type": "timesfm", "ts_model_class": "TimesFMModel", "hidden_size": 1280,
+     "num_layers": 20, "num_heads": 16, "intermediate_size": 1280, "head_dim": 80,
+     "patch_length": 64, "quantile_horizon_length": 1024, "num_quantiles": 9,
+     "context_length": 16384, "prediction_length": 128, "use_positional_encoding": false,
+     "query_pre_attn_scalar": 256.0, "use_rope": true, "rope_theta": 10000.0,
+     "use_horizon_ff": false}
+    """
+
+/// Loads the local checkpoint the same way ModelArena does: a directory holding
+/// `config.json` + `model.safetensors`, passed to `TimeSeriesForecaster.loadFromDirectory`.
+/// Weights are evaluated before the temporary directory is removed.
+func loadTimesFM25Forecaster() throws -> TimeSeriesForecaster {
+    let dir = FileManager.default.temporaryDirectory
+        .appending(path: "timesfm25-test-\(UUID().uuidString)")
+    try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+    defer { try? FileManager.default.removeItem(at: dir) }
+    try timesFM25HubConfig.write(
+        to: dir.appending(path: "config.json"), atomically: true, encoding: .utf8)
+    try FileManager.default.createSymbolicLink(
+        at: dir.appending(path: "model.safetensors"), withDestinationURL: timesFM25Checkpoint)
+    let forecaster = try TimeSeriesForecaster.loadFromDirectory(dir)
+    eval(forecaster.model)
+    return forecaster
+}
 
 private struct TimesFMGolden: Decodable {
     struct Case: Decodable {
@@ -276,16 +303,6 @@ private struct TimesFMGolden: Decodable {
     .serialized)
 struct TimesFMGoldenTests {
 
-    /// Config exactly as published in kunal732/timesfm-2.5-200m-transformers-mlx (legacy keys).
-    private let hubConfig = """
-        {"model_type": "timesfm", "ts_model_class": "TimesFMModel", "hidden_size": 1280,
-         "num_layers": 20, "num_heads": 16, "intermediate_size": 1280, "head_dim": 80,
-         "patch_length": 64, "quantile_horizon_length": 1024, "num_quantiles": 9,
-         "context_length": 16384, "prediction_length": 128, "use_positional_encoding": false,
-         "query_pre_attn_scalar": 256.0, "use_rope": true, "rope_theta": 10000.0,
-         "use_horizon_ff": false}
-        """
-
     @Test("Checkpoint loads with every parameter present")
     func testCheckpointLoadsStrictly() throws {
         let model = TimesFMModel(TimesFMConfiguration())
@@ -295,15 +312,7 @@ struct TimesFMGoldenTests {
 
     @Test("Forecasts match the upstream torch reference (loaded like ModelArena)")
     func testMatchesReference() throws {
-        // Same path the app uses: config.json + safetensors via loadFromDirectory.
-        let dir = FileManager.default.temporaryDirectory
-            .appending(path: "timesfm25-golden-\(UUID().uuidString)")
-        try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
-        defer { try? FileManager.default.removeItem(at: dir) }
-        try hubConfig.write(to: dir.appending(path: "config.json"), atomically: true, encoding: .utf8)
-        try FileManager.default.createSymbolicLink(
-            at: dir.appending(path: "model.safetensors"), withDestinationURL: timesFM25Checkpoint)
-        let forecaster = try TimeSeriesForecaster.loadFromDirectory(dir)
+        let forecaster = try loadTimesFM25Forecaster()
 
         let golden = try JSONDecoder().decode(
             TimesFMGolden.self, from: Data(contentsOf: timesFM25Golden))
