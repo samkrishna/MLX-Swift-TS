@@ -281,6 +281,15 @@ def convert_chronos_v2(model_dir: Path) -> tuple[dict[str, mx.array], dict]:
 # ---------------------------------------------------------------------------
 
 
+def _timesfm_input_patch_len(weights: dict, hf_config: dict) -> int:
+    """The tokenizer sees [values, mask] concatenated, so its input width is 2 * patch."""
+    if "tokenizer.hidden_layer.weight" in weights:
+        patch_length = int(weights["tokenizer.hidden_layer.weight"].shape[-1]) // 2
+        print(f"  Inferred input_patch_len={patch_length} from tokenizer weights")
+        return patch_length
+    return int(hf_config.get("patch_length", 32))
+
+
 def convert_timesfm(model_dir: Path) -> tuple[dict[str, mx.array], dict]:
     """Convert TimesFM (v2.0, v2.5 pytorch, or v2.5 transformers) to MLX format."""
     print("Converting TimesFM model...")
@@ -299,10 +308,7 @@ def convert_timesfm(model_dir: Path) -> tuple[dict[str, mx.array], dict]:
     backbone_cfg = hf_config.get("backbone_config", hf_config)
     num_quantiles = len(hf_config.get("quantiles", [0.1]*9))
 
-    patch_length = hf_config.get("patch_length", 32)
-    if "tokenizer.hidden_layer.weight" in weights:
-        patch_length = weights["tokenizer.hidden_layer.weight"].shape[-1]
-        print(f"  Inferred patch_length={patch_length} from tokenizer weights")
+    patch_length = _timesfm_input_patch_len(weights, hf_config)
 
     config = {
         "model_type": "timesfm",
@@ -312,13 +318,12 @@ def convert_timesfm(model_dir: Path) -> tuple[dict[str, mx.array], dict]:
         "num_heads": backbone_cfg.get("num_attention_heads", backbone_cfg.get("num_heads", 16)),
         "intermediate_size": backbone_cfg.get("intermediate_size", 1280),
         "head_dim": backbone_cfg.get("head_dim", 80),
-        "patch_length": int(patch_length),
+        "input_patch_len": patch_length,
+        "output_patch_len": hf_config.get("output_patch_len", 128),
         "quantile_horizon_length": hf_config.get("quantile_horizon_length", 1024),
         "num_quantiles": num_quantiles,
         "context_length": hf_config.get("context_length", 16384),
         "prediction_length": hf_config.get("horizon_length", 128),
-        "use_positional_encoding": backbone_cfg.get("use_positional_encoding", False),
-        "query_pre_attn_scalar": float(backbone_cfg.get("head_dim", 80)),  # pytorch uses headDim
     }
 
     print(f"  Loaded {len(remapped)} weight tensors")
@@ -385,12 +390,7 @@ def _convert_timesfm_transformers(weights: dict, hf_config: dict) -> tuple[dict[
             remapped[f"stacked_xf.{i}.attn.qkv_proj.weight"] = mx.concatenate(
                 [raw_q, raw_k, raw_v], axis=0)
 
-    # Infer patch_length from tokenizer input dim
-    if "tokenizer.hidden_layer.weight" in remapped:
-        patch_length = remapped["tokenizer.hidden_layer.weight"].shape[-1]
-        print(f"  Inferred patch_length={patch_length} from tokenizer weights")
-    else:
-        patch_length = hf_config.get("patch_length", 32)
+    patch_length = _timesfm_input_patch_len(remapped, hf_config)
 
     num_quantiles = len(hf_config.get("quantiles", [0.1]*9))
 
@@ -402,17 +402,13 @@ def _convert_timesfm_transformers(weights: dict, hf_config: dict) -> tuple[dict[
         "num_heads": hf_config.get("num_attention_heads", 16),
         "intermediate_size": hf_config.get("intermediate_size", 1280),
         "head_dim": hf_config.get("head_dim", 80),
-        "patch_length": int(patch_length),
+        "input_patch_len": patch_length,
+        "output_patch_len": hf_config.get("output_patch_len", 128),
         "quantile_horizon_length": hf_config.get("output_quantile_len", 1024),
         "num_quantiles": num_quantiles,
         "context_length": hf_config.get("context_length", 16384),
         "prediction_length": hf_config.get("horizon_length", 128),
-        "use_positional_encoding": False,
-        # Transformers variant uses query_pre_attn_scalar instead of headDim for scaling
-        "query_pre_attn_scalar": float(hf_config.get("query_pre_attn_scalar", 256.0)),
-        "use_rope": True,
         "rope_theta": float(hf_config.get("rope_theta", 10000.0)),
-        "use_horizon_ff": False,  # TODO: investigate amplification with horizon_ff_layer
     }
 
     print(f"  Loaded {len(remapped)} weight tensors (transformers variant)")
