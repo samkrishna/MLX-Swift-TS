@@ -9,7 +9,7 @@ Run Time series foundation models on Apple Silicon.
 
 MLX-Swift-TS is a Swift SDK for running time series foundation models locally on Mac and iOS using [MLX](https://github.com/ml-explore/mlx-swift). Convert time series models hosted on HuggingFace Hub or stored locally to MLX format, then run inference - no server required.
 
-Eight model architectures are supported out of the box, from Datadog's Toto to Google's TimesFM, Amazon's Chronos, and more.
+Nine model architectures are supported out of the box, from Datadog's Toto to Google's TimesFM, Amazon's Chronos, and more.
 
 ## Installation
 
@@ -94,7 +94,7 @@ Every forecast returns a `TimeSeriesPrediction` with three fields:
 | Field | Shape | Description |
 |-------|-------|-------------|
 | `mean` | `[B, V, H]` | Point forecast - your best single predicted value per step |
-| `quantiles` | `[B, V, H, Q]` | Uncertainty bands - the range of plausible outcomes (available on TimesFM, Chronos, Chronos-2, FlowState, Kairos, TiRex) |
+| `quantiles` | `[B, V, H, Q]` | Uncertainty bands - the range of plausible outcomes (available on TimesFM 2.5 and 3.0, Chronos, Chronos-2, FlowState, Kairos, TiRex) |
 | `mixtureParams` | `MixtureParams` | Full Student-t mixture distribution (Toto only) |
 
 **Quantiles** express uncertainty as percentile ranges. A tight range means the model is confident; a wide range means the signal is hard to predict. For example, a 10th-90th percentile band gives you a plausible low and high around the forecast line.
@@ -120,6 +120,7 @@ Any model fine-tuned on one of these architectures can be converted and run — 
 |-------------|--------|--------|--------|-------------|----------------------|
 | **[Toto](https://huggingface.co/Datadog/Toto-Open-Base-1.0)** | Datadog | Patch transformer + space-wise attention | Student-t mixture | 4 096 | `Datadog/Toto-Open-Base-1.0` |
 | **[TimesFM 2.5](https://huggingface.co/google/timesfm-2.5-200m-pytorch)** | Google | Decoder-only transformer | 9 quantiles | 16 384 | `google/timesfm-2.5-200m-pytorch` |
+| **[TimesFM 3.0](https://huggingface.co/google/timesfm-3.0-pytorch)** | Google | Mixing transformer (sequence + variate attention), single-pass decode | 9 quantiles | 15 360 | `google/timesfm-3.0-pytorch` (non-commercial license) |
 | **[Chronos](https://huggingface.co/amazon/chronos-t5-base)** | Amazon | T5 encoder-decoder, tokenized | Sampled quantiles | 512 | `amazon/chronos-t5-base` |
 | **[Chronos-2](https://huggingface.co/autogluon/chronos-2-synth)** | AutoGluon | T5 encoder-only + RoPE | 13 quantiles | 8 192 | `autogluon/chronos-2-synth` |
 | **[Lag-Llama](https://huggingface.co/time-series-foundation-models/Lag-Llama)** | Rasul et al. | Llama-style, lag features | Student-t distribution | 32 | `time-series-foundation-models/Lag-Llama` |

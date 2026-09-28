@@ -55,7 +55,7 @@ public enum TimeSeriesModelError: Error, LocalizedError {
     public var errorDescription: String? {
         switch self {
         case .unsupportedModelType(let type):
-            return "Unsupported model type: '\(type)'. Registered types: toto, chronos, chronos_v2, timesfm, lag_llama, flowstate, kairos, tirex"
+            return "Unsupported model type: '\(type)'. Registered types: toto, chronos, chronos_v2, timesfm, timesfm3, lag_llama, flowstate, kairos, tirex"
         case .missingConfigFile(let url):
             return "Missing config.json at \(url.path)"
         case .weightLoadingFailed(let msg):
@@ -83,6 +83,7 @@ public enum TimeSeriesTypeRegistry {
             "chronos": createTSModel(ChronosConfiguration.self) { ChronosModel($0) },
             "chronos_v2": createTSModel(Chronos2Configuration.self) { Chronos2Model($0) },
             "timesfm": createTSModel(TimesFMConfiguration.self) { TimesFMModel($0) },
+            "timesfm3": createTSModel(TimesFM3Configuration.self) { TimesFM3Model($0) },
             "lag_llama": createTSModel(LagLlamaConfiguration.self) { LagLlamaModel($0) },
             "flowstate": createTSModel(FlowStateConfiguration.self) { FlowStateModel($0) },
             "kairos": createTSModel(KairosConfiguration.self) { KairosModel($0) },

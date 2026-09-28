@@ -2,7 +2,7 @@
 """
 Convert time series foundation models to MLX safetensors format.
 
-Supports: Toto, Chronos (v1 & v2), TimesFM (v2.0 & v2.5), Lag-Llama,
+Supports: Toto, Chronos (v1 & v2), TimesFM (v2.0, v2.5 & v3.0), Lag-Llama,
           FlowState, Kairos, TiRex.
 
 Usage:
@@ -10,6 +10,7 @@ Usage:
     python convert_ts_model.py --hf-path amazon/chronos-t5-base --mlx-path ./converted/chronos
     python convert_ts_model.py --hf-path autogluon/chronos-2-synth --mlx-path ./converted/chronos2
     python convert_ts_model.py --hf-path google/timesfm-2.5-200m-pytorch --mlx-path ./converted/timesfm
+    python convert_ts_model.py --hf-path google/timesfm-3.0-pytorch --mlx-path ./converted/timesfm3-fp16
     python convert_ts_model.py --hf-path time-series-foundation-models/Lag-Llama --mlx-path ./converted/lag-llama
     python convert_ts_model.py --hf-path ibm-granite/granite-timeseries-flowstate-r1 --mlx-path ./converted/flowstate
     python convert_ts_model.py --hf-path mldi-lab/Kairos_50m --mlx-path ./converted/kairos
@@ -36,6 +37,8 @@ MODEL_TYPE_PATTERNS = {
     "toto": ["toto", "Toto"],
     "chronos_v2": ["chronos-2", "chronos_2"],
     "chronos": ["chronos"],
+    # Checked before "timesfm": dict order is match order.
+    "timesfm3": ["timesfm-3", "timesfm_3", "timesfm3"],
     "timesfm": ["timesfm", "TimesFM"],
     "lag_llama": ["lag-llama", "Lag-Llama", "lag_llama"],
     "flowstate": ["flowstate", "FlowState"],
@@ -413,6 +416,69 @@ def _convert_timesfm_transformers(weights: dict, hf_config: dict) -> tuple[dict[
 
     print(f"  Loaded {len(remapped)} weight tensors (transformers variant)")
     return remapped, config
+
+
+# ---------------------------------------------------------------------------
+# TimesFM 3.0 conversion
+# ---------------------------------------------------------------------------
+
+
+def convert_timesfm3(model_dir: Path) -> tuple[dict[str, mx.array], dict]:
+    """Convert TimesFM 3.0 (google/timesfm-3.0-pytorch) to MLX format.
+
+    The checkpoint's tensor names already match the Swift TimesFM3Model module tree
+    (as they do upstream's own MLX backend, timesfm3.mlx), so weights are copied as-is.
+    """
+    print("Converting TimesFM 3.0 model...")
+    weights = load_safetensors_weights(model_dir)
+    hf_config = load_hf_config(model_dir)
+
+    # Upstream options the Swift port does not implement. The public 3.0 checkpoint uses
+    # none of them; fail rather than produce a model that silently diverges.
+    unsupported = {
+        "use_frozen_running_stats": (hf_config.get("use_frozen_running_stats", False), False),
+        "use_iterative_cpm_revin": (hf_config.get("use_iterative_cpm_revin", True), True),
+        "use_stitching": (hf_config.get("use_stitching", True), True),
+        "input_transform": (hf_config.get("input_transform", "identity"), "identity"),
+    }
+    for key, (value, expected) in unsupported.items():
+        if value != expected:
+            raise NotImplementedError(f"TimesFM 3 with {key}={value!r} is not supported")
+
+    transformer = hf_config.get("transformer_config", {})
+    inner = transformer.get("transformer", {})
+    input_patch_len = int(hf_config.get("input_patch_len", 32))
+    output_patch_len = int(hf_config.get("output_patch_len", 64))
+
+    # The pre-transformer block reads [values, rolled future values, masks for both].
+    resblock_in = weights["pre_transformer_resblock.hidden_layer.weight"].shape[-1]
+    if resblock_in != 2 * (input_patch_len + output_patch_len):
+        raise ValueError(
+            f"pre_transformer_resblock input width {resblock_in} != "
+            f"2 * ({input_patch_len} + {output_patch_len})"
+        )
+
+    config = {
+        "model_type": "timesfm3",
+        "ts_model_class": "TimesFM3Model",
+        "input_patch_len": input_patch_len,
+        "output_patch_len": output_patch_len,
+        "model_dims": inner.get("model_dims", 1280),
+        "hidden_dims": inner.get("hidden_dims", 1280),
+        "num_layers": transformer.get("num_layers", 20),
+        "num_heads": inner.get("num_heads", 16),
+        "quantiles": hf_config.get("quantiles", [0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9]),
+        "use_variate_attention": hf_config.get("use_variate_attention", True),
+        "use_linear_detrending": hf_config.get("use_linear_detrending", True),
+        "linear_detrending_threshold": hf_config.get("linear_detrending_threshold", 0.5),
+        "value_clip": hf_config.get("value_clip", 1e20),
+        "max_variates": inner.get("max_variates", 32),
+        # Upstream forecasters truncate longer contexts to this (`_MAX_CONTEXT_LENGTH`).
+        "max_context_length": 15360,
+    }
+
+    print(f"  Loaded {len(weights)} weight tensors")
+    return weights, config
 
 
 # ---------------------------------------------------------------------------
@@ -860,6 +926,7 @@ CONVERTERS = {
     "chronos": convert_chronos,
     "chronos_v2": convert_chronos_v2,
     "timesfm": convert_timesfm,
+    "timesfm3": convert_timesfm3,
     "lag_llama": convert_lag_llama,
     "flowstate": convert_flowstate,
     "kairos": convert_kairos,
