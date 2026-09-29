@@ -78,3 +78,28 @@ func standardDeviation(_ x: [Float]) -> Float {
     let mean = x.reduce(0, +) / Float(x.count)
     return (x.map { ($0 - mean) * ($0 - mean) }.reduce(0, +) / Float(x.count)).squareRoot()
 }
+
+/// Largest absolute difference between two equal-length arrays.
+func maxAbsDifference(_ a: [Float], _ b: [Float]) -> Float {
+    zip(a, b).map { abs($0 - $1) }.max()!
+}
+
+/// Worst error relative to the true value, across all steps: max |predicted − truth| / |truth|.
+func worstRelativeError(_ predicted: [Float], _ truth: [Float]) -> Float {
+    zip(predicted, truth).map { abs($0 - $1) / abs($1) }.max()!
+}
+
+/// Fraction of steps where the true value lies inside the 10%…90% band (ideal: about 0.8).
+func coverage(_ forecast: Forecast, variate: Int = 0, truth: [Float]) -> Float {
+    let low = forecast.low(variate)
+    let high = forecast.high(variate)
+    let inside = (0 ..< truth.count).filter { truth[$0] >= low[$0] && truth[$0] <= high[$0] }
+    return Float(inside.count) / Float(truth.count)
+}
+
+/// Mean width of the 10%…90% band.
+func meanBandWidth(_ forecast: Forecast, variate: Int = 0) -> Float {
+    let low = forecast.low(variate)
+    let high = forecast.high(variate)
+    return zip(low, high).map { $1 - $0 }.reduce(0, +) / Float(low.count)
+}

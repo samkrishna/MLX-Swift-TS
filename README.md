@@ -188,6 +188,17 @@ xcodebuild test -scheme mlxtoto-Package -destination 'platform=macOS' \
 
 Tests that need converted weights are **skipped, not failed, when the folder is missing**, so check the output for the suite you care about. Override a location with `TEST_RUNNER_TIMESFM3_FP32_DIR` / `TEST_RUNNER_TIMESFM3_FP16_DIR` (xcodebuild only forwards variables with the `TEST_RUNNER_` prefix). Golden values in `Tests/MLXTimeSeriesTests/Fixtures/` come from Google's reference code via `Scripts/timesfm25_golden.py` and `Scripts/timesfm3_golden.py`.
 
+The teaching suites run on all four TimesFM checkpoints and print their measurements (look for `[MV…]` / `[Series …]` lines):
+
+```bash
+xcodebuild test -scheme mlxtoto-Package -destination 'platform=macOS' \
+  -only-testing:MLXTimeSeriesTests/TimesFMMultivariateTests \
+  -only-testing:MLXTimeSeriesTests/TimesFMSeriesTests \
+  -only-testing:MLXTimeSeriesTests/TimesFMSeriesMultivariateTests
+```
+
+Filter by suite; a per-function `-only-testing` filter runs 0 tests with Swift Testing.
+
 ### Upload to HuggingFace
 
 Add `--upload-repo` to push the converted model to HuggingFace Hub with an auto-generated model card:

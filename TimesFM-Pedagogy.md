@@ -159,13 +159,41 @@ Eleven short experiments, each isolating one idea about how a *pattern model* be
 | 10 | **Leading indicator** | B = A shifted 5 steps later; B alone vs A and B together | identical: 2.5 treats series separately | forecast changes (by up to 0.06) but gets slightly *worse*: error 0.183 vs 0.166 | Variate attention mixes series, but hasn't learned "copy the leader". A capability, not a guarantee. |
 | 11 | **Regime change** | level 10, then a jump to 20 three, ten or forty steps before the end | next step → 20 steps: 18.3 → 10.7 · 19.8 → 15.6 · 20.0 → 19.9 | 19.2 → 15.2 · 20.0 → 19.6 · 19.8 → 19.6 | The fresher the jump, the more it hedges back to the old level. 3.0 accepts the new level faster. |
 
+## Multivariate and "Sequences and Series" experiments (measured)
+
+Eighteen more experiments, in three files: `TimesFMMultivariateTests.swift` (1–6), `TimesFMSeriesTests.swift` (7–14, ideas from second-semester calculus) and `TimesFMSeriesMultivariateTests.swift` (15–18). Numbers are fp32; fp16 is within a few percent. Variates are forecast together from their pasts only; they are not covariates. TimesFM 2.5 treats variates independently (a control in every multivariate test); 3.0 has variate attention.
+
+| # | Experiment | Result | Lesson |
+|---|---|---|---|
+| 1 | Lagged copy (B = A delayed 8) | Neither model copies; error is 1–4% better than guessing 0. 3.0 shifts B by up to 0.04 | Build the lagged column yourself |
+| 2 | Unrelated companion | 2.5 unchanged; 3.0 moves a random walk by 23% of its std and the seasonal series gets ~16% worse | Don't bundle unrelated series into one 3.0 call untested |
+| 3 | Different scales (20 vs 5000) | Rescaling changes forecasts by ≤ 2.5e-6 of std | Per-variate normalisation works |
+| 4 | Conserved total (A + B = 100) | Gap 0.335 (2.5), 0.084 (3.0); deriving B = 100 − A gives 0 | Derive for consistency, not accuracy |
+| 5 | Order swap | Differences ≤ 3e-6 of std | Variate order doesn't matter |
+| 6 | Noisy twin | 3.0 error 0.568 → 0.382 with a clean twin; 2.5 unchanged (0.931) | Variate attention helps most here |
+| 7 | Geometric a·rⁿ | Log route: 3.0 exact to ~1e-6; 2.5 7–19% off. Raw is orders of magnitude worse | Take logs (|a| and restore the sign for r < 0) |
+| 8 | Σ1/n² vs Σ1/n | Harmonic climb forecast within 6%; forecasting terms then summing cuts worst error 2.2–2.7× | The model doesn't flatten the slow divergence over 64 steps |
+| 9 | Leibniz series → π | Right side of π at 40/40 steps; MAE ~7e-4 | Zig-zag reproduced |
+| 10 | Taylor T(x) vs sin x | T's climb underestimated (ends 2.9 / 5.6 vs 7.04) | It continues the pattern shown, not the function |
+| 11 | Fixed-point iteration | Within 1.5% (cos) and 0.1% (√2) of the limit; 3.0 hedges ~3× more on cos | A settled sequence isn't automatically easy |
+| 12 | Logistic map | r = 2.8, 3.3: 40–250× better than the mean. Chaos (3.9): no better than the mean; 80% band covers 75–78% | Deterministic ≠ forecastable; bands stay honest |
+| 13 | Growth ln n, n², 2ⁿ, n! | 2ⁿ log route: 3.0 exact, 2.5 42–98% off. n! raw is NaN (2.5) or clipped (3.0) | Log helps exponentials, not gentle growth; n! breaks everything |
+| 14 | Ratio test | Ratios forecast to < 0.008 (2.5), < 0.0007 (3.0); 1/n and 1/n² both look "just under 1" | A transformed view answers only what that view can |
+| 15 | Terms + partial sums | Forecast terms then add up: 59× (2.5) and 19× (3.0) better than direct | Forecast increments, let arithmetic accumulate |
+| 16 | Taylor + sin together | 3.0 halves T's error (0.27 → 0.13), sin barely changes | Mixing helped this pair by accident, not understanding |
+| 17 | Convergent + divergent together | 3.0 mixing changes forecasts by ≤ 4e-3 | No leakage between two smooth curves |
+| 18 | Series and remainder | Deriving A = L − B̂ is 2.7× better on 2.5; 3.0 joint keeps A + B = L 17× tighter | Forecast the cleaner variate, derive the other |
+
 ## Reproduce
 
 ```bash
 xcodebuild test -scheme mlxtoto-Package -destination 'platform=macOS' \
   -only-testing:MLXTimeSeriesTests/TimesFMFibonacciTests \
   -only-testing:MLXTimeSeriesTests/TimesFM3FibonacciTests \
-  -only-testing:MLXTimeSeriesTests/TimesFMIntuitionTests
+  -only-testing:MLXTimeSeriesTests/TimesFMIntuitionTests \
+  -only-testing:MLXTimeSeriesTests/TimesFMMultivariateTests \
+  -only-testing:MLXTimeSeriesTests/TimesFMSeriesTests \
+  -only-testing:MLXTimeSeriesTests/TimesFMSeriesMultivariateTests
 ```
 
 TimesFM 2.5 fp16 downloads from the Hub (`kunal732/timesfm-2.5-200m-transformers-mlx`). The other three are converted locally:
