@@ -184,6 +184,41 @@ Eighteen more experiments, in three files: `TimesFMMultivariateTests.swift` (1�
 | 17 | Convergent + divergent together | 3.0 mixing changes forecasts by ≤ 4e-3 | No leakage between two smooth curves |
 | 18 | Series and remainder | Deriving A = L − B̂ is 2.7× better on 2.5; 3.0 joint keeps A + B = L 17× tighter | Forecast the cleaner variate, derive the other |
 
+## Rolling price forecasts (measured)
+
+Everything above uses synthetic or mathematical series. `TimesFMPricesTests.swift` points the same four checkpoints at real data: 6,183 hourly closing prices in `Tests/Documents/prices.csv`. It forecasts in non-overlapping **1-day (24 bars)** and **5-day (120 bars)** windows, each from the previous 512 bars, so every bar is forecast exactly once. Two targets are compared: the raw **close**, and **log returns** ln(cₜ/cₜ₋₁), rebuilt into a price path as last close × exp(running sum). Both targets use the same windows (236 one-day, 47 five-day). Windows are counted in bars, not calendar time, and the data has a 49-hour weekend gap each week, so some windows span a weekend the model cannot see.
+
+The yardstick is **"no change"**, also called the last-value baseline: forecast the last known close for every future bar. It costs nothing and is hard to beat on a near-random walk. *Skill* = 1 − MAE / no-change MAE, so positive means better than repeating the last close and negative means worse. "No change" scores MAE 0.00383 at 24 bars and 0.00704 at 120 bars.
+
+Numbers are fp32; fp16 matches to about three significant digits in MAE and within 0.002 in the correlations.
+
+| Target | Horizon | Model | MAE | Skill vs no change | 10–90% band coverage | Direction right | Move correlation | Move size |
+|---|---|---|---|---|---|---|---|---|
+| close | 24 bars | 2.5 | 0.00390 | −1.8% | 0.70 | 0.449 | +0.004 | 0.25 |
+| close | 24 bars | 3.0 | 0.00395 | −3.1% | 0.71 | 0.479 | −0.011 | 0.29 |
+| close | 120 bars | 2.5 | 0.00781 | −10.9% | 0.68 | 0.532 | +0.060 | 0.43 |
+| close | 120 bars | 3.0 | 0.00830 | −17.8% | 0.72 | 0.511 | −0.242 | 0.56 |
+| log return | 24 bars | 2.5 | 0.00397 | −3.7% | n/a | 0.513 | −0.059 | 0.29 |
+| log return | 24 bars | 3.0 | 0.00393 | −2.7% | n/a | 0.453 | −0.114 | 0.23 |
+| log return | 120 bars | 2.5 | 0.00744 | −5.6% | n/a | 0.574 | −0.043 | 0.66 |
+| log return | 120 bars | 3.0 | 0.00743 | −5.5% | n/a | 0.489 | −0.105 | 0.55 |
+
+How to read the movement columns. A window's *move* is the forecast (or actual) value at its last bar minus the last known close.
+- **Direction right**: how often the forecast move had the same sign as the actual move. Compare it with how often the price rose: 52.5% of one-day windows and 57.4% of five-day windows. Always guessing "up" would score exactly that.
+- **Move correlation**: Pearson correlation of forecast moves and actual moves across windows. With 47 windows it takes about ±0.29 to stand out from chance, with 236 windows about ±0.13.
+- **Move size**: mean |forecast move| / mean |actual move|. Below 1 means the model forecasts smaller moves than happen.
+
+What it shows:
+
+- **Neither model beats "no change"**, at either horizon, on either target. Every skill is negative, by 2–18%. This is what a near-random walk looks like, the same lesson as the random-walk (9) and digits-of-π (3) experiments: there is no pattern in the history to continue.
+- **The move calls are no better than a coin flip.** Direction is right 45–57% of the time, and every move correlation sits inside the noise band (the largest is −0.24, 3.0 close at 120 bars). The forecast move carries no usable information about the actual move.
+- **Forecast moves are far too small** (0.23–0.66 of actual). For an unpredictable series that is the cautious median, which is why the forecasts hug "no change".
+- **The uncertainty is the useful output.** 68–72% of actual closes land inside the nominal 80% band: slightly overconfident, 2.5 more so than 3.0 at 120 bars (0.68 vs 0.72), but honest about how little it knows.
+- **Forecasting log returns helps at 120 bars** (−5.6% vs −10.9% on 2.5, −5.5% vs −17.8% on 3.0) and is about equal at 24 bars. The "forecast the changes" recipe from the top of this document helps, but only by being less wrong.
+- **Caveats:** one instrument, about one year, one context length (512) and one windowing. These are descriptive measurements, not trading advice.
+
+Per-window detail is written to `Tests/Documents/forecasts/prices_<model>.csv`, one row per forecast bar: `model, target, horizon, window, step, close_date` (epoch seconds), `close_date_pacific` (ISO 8601, US/Pacific with offset), `last_known, actual, forecast, low, high, actual_move, forecast_move`. That folder is generated on each run and is git-ignored.
+
 ## Reproduce
 
 ```bash
@@ -195,6 +230,15 @@ xcodebuild test -scheme mlxtoto-Package -destination 'platform=macOS' \
   -only-testing:MLXTimeSeriesTests/TimesFMSeriesTests \
   -only-testing:MLXTimeSeriesTests/TimesFMSeriesMultivariateTests
 ```
+
+The prices suite needs `Tests/Documents/prices.csv` and takes about two minutes for all four checkpoints:
+
+```bash
+xcodebuild test -scheme mlxtoto-Package -destination 'platform=macOS' \
+  -only-testing:MLXTimeSeriesTests/TimesFMPricesTests
+```
+
+Set `TEST_RUNNER_PRICES_OUT_DIR=/some/dir` on that command to write the CSVs somewhere else.
 
 TimesFM 2.5 fp16 downloads from the Hub (`kunal732/timesfm-2.5-200m-transformers-mlx`). The other three are converted locally:
 
