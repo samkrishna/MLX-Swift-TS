@@ -10,6 +10,9 @@ Read LESSONS.md before starting work.
   path, grep for the old path and confirm xcodebuild output shows the suite's printed
   golden/Fibonacci lines, not a skip.
 - Pass env vars to tests as `TEST_RUNNER_<NAME>=...` on the xcodebuild command line.
+- A test that writes generated files into the repo (e.g. Tests/Documents/forecasts/) must have its
+  output folder added to .gitignore in the same commit that adds the writer. Check `git status`
+  after the first run for untracked output.
 - Numbers in test comments (e.g. "Observed" lines) must be copied from an xcodebuild run of
   that exact test on each checkpoint variant. Never write them from estimates or
   exploration output.

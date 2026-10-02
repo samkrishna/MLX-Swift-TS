@@ -44,3 +44,21 @@ Written by /aar-loop after each session's After Action Review. Read this file be
 - Actual: After the whole TimesFM 3 port the README still showed only Toto conversion: no --dtype (fp16 default), no --model-type, no timesfm25-fp32/timesfm3-fp32/timesfm3-fp16 folder names, no test-running instructions; commands lived only in TimesFM-Pedagogy.md and Swift doc comments. Found only when the user asked. The README fix (commit 326a5af) documented the 2.5 Hub-ID converter command without having re-run it; re-run afterwards into a scratch folder, it produced a model.safetensors byte-identical (same sha256) to converted/timesfm25-fp32, config.json identical.
 - Why: Docs were added where the work was happening (pedagogy doc, test comments) and nothing prompted a README check; README is not touched by tests or builds. Fix applied: CLAUDE.md.
 - tags: docs,readme,converter,fix-applied
+
+## 2026-10-02 -- A test that writes generated files into the repo tree (TimesFMPricesTests writes Tests/Documents/forecasts/*.csv, about 3 MB each) needs its output folder in .gitignore in the same change that adds the writer; otherwise git status shows it untracked and a broad git add would commit about 12 MB of CSVs.
+- Expected: The new suite would leave the repo clean apart from the code and prices.csv.
+- Actual: The first run left Tests/Documents/forecasts/ untracked on pv-exp; the user had to say 'Ignore the generated forecasts' and later 'Add the forecasts directory to .gitignore' before it was handled.
+- Why: The output folder was chosen next to the test data for convenience and nothing in the workflow asked whether generated files should be tracked. Fix applied: CLAUDE.md Build & test bullet.
+- tags: git,testing,generated-files,fix-applied
+
+## 2026-10-02 -- Define every metric and baseline term in one clause the first time it appears in a chat report (MAE = mean absolute error; 'no change' = repeat the last known close for every future bar; skill = 1 - MAE / no-change MAE); the user asked 'What is MAE?' and 'what does no change mean?' within one session.
+- Expected: The prices results summary (MAE, skill, 'no change', move correlation) would be readable as written.
+- Actual: The user stopped to ask what MAE meant, then what 'no change' meant. The test header comment and the pedagogy doc defined the terms, but the chat replies used them bare, and I used 'no change' and 'last-value baseline' for the same thing.
+- Why: Definitions lived in the file comments I wrote, not in the replies the user read, and I switched between two names for one baseline. Context only, no file fix.
+- tags: communication,metrics,timesfm-prices
+
+## 2026-10-02 -- Verify a generated derived column with an independent implementation before reporting it: the Swift close_date_pacific column (ISO8601DateFormatter, America/Los_Angeles) was checked against Python zoneinfo on all 90,432 rows across the four CSVs with 0 mismatches, covering both -08:00 and -07:00 offsets.
+- Expected: The new Pacific ISO column would be correct, since the formatter is a standard API.
+- Actual: The check found 0 mismatches; first window is 2023-02-01T02:00:00-08:00 from epoch 1675245600, and sampled rows in July/August show -07:00.
+- Why: Worked as planned; locking in the pattern. Date and timezone output is easy to get subtly wrong (offset, DST, epoch seconds vs milliseconds), and a second implementation in a different language costs one short script. Context only, no file fix.
+- tags: testing,timezones,verification

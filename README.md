@@ -199,6 +199,13 @@ xcodebuild test -scheme mlxtoto-Package -destination 'platform=macOS' \
 
 Filter by suite; a per-function `-only-testing` filter runs 0 tests with Swift Testing.
 
+`TimesFMPricesTests` forecasts the hourly closes in `Tests/Documents/prices.csv` in rolling 1-day (24-bar) and 5-day (120-bar) windows on all four checkpoints and compares forecast moves with actual moves (look for `[Prices …]` lines; about two minutes). It also writes per-window forecasts and a metrics summary (`prices_summary.csv`) to `Tests/Documents/forecasts/`, which is git-ignored; set `TEST_RUNNER_PRICES_OUT_DIR=/some/dir` to write elsewhere:
+
+```bash
+xcodebuild test -scheme mlxtoto-Package -destination 'platform=macOS' \
+  -only-testing:MLXTimeSeriesTests/TimesFMPricesTests
+```
+
 ### Upload to HuggingFace
 
 Add `--upload-repo` to push the converted model to HuggingFace Hub with an auto-generated model card:
@@ -248,7 +255,8 @@ MLX-Swift-TS/
 │   ├── TotoMonitor/                     # System metrics monitoring demo
 │   └── WeatherForecast/                 # Weather forecasting demo
 └── Tests/
-    └── MLXTimeSeriesTests/
+    ├── MLXTimeSeriesTests/
+    └── Documents/                       # prices.csv input; forecasts/ output (git-ignored)
 ```
 
 ## Requirements
