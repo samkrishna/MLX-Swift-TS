@@ -56,6 +56,9 @@ import Testing
 // forecast bar: model, target, horizon, window, step, close_date (epoch seconds), close_date_pacific
 // (ISO 8601 in America/Los_Angeles, with offset), last_known, actual, forecast, low, high, actual_move,
 // forecast_move (moves are relative to the last known close).
+// A second file, prices_summary.csv in the same folder, has one row per model × target × horizon:
+// model, target, horizon, windows, mae, no_change_mae, skill, band_coverage, direction_correct,
+// price_rose, move_corr, move_size, step_corr (the same metrics as the printed lines).
 
 /// The hourly bars from prices.csv.
 private struct PriceBars {
@@ -165,6 +168,7 @@ struct TimesFMPricesTests {
 
     static let context = 512
     static let horizons = [24, 120]
+    private static var summaryRows: [String: [String]] = [:]
 
     /// Forecasts every non-overlapping window of `horizon` bars, each from the previous 512 bars.
     private static func rollingForecasts(
@@ -206,6 +210,7 @@ struct TimesFMPricesTests {
         let bars = try PriceBars.load()
         var csv = "model,target,horizon,window,step,close_date,close_date_pacific,last_known,actual,forecast,low,high,actual_move,forecast_move\n"
         var results: [String: PriceMetrics] = [:]
+        var summary: [String] = []
         let pacific = ISO8601DateFormatter()
         pacific.timeZone = TimeZone(identifier: "America/Los_Angeles")!
 
@@ -214,6 +219,11 @@ struct TimesFMPricesTests {
                 let windows = Self.rollingForecasts(forecaster, bars: bars, target: target, horizon: horizon)
                 let m = metrics(windows)
                 results["\(target.rawValue)-\(horizon)"] = m
+                summary.append([
+                    model.name, target.rawValue, "\(horizon)", "\(m.windows)", "\(m.mae)", "\(m.baselineMAE)",
+                    "\(m.skill)", m.coverage.map { "\($0)" } ?? "", "\(m.direction)", "\(m.up)",
+                    "\(m.moveCorr)", "\(m.moveSize)", "\(m.stepCorr)",
+                ].joined(separator: ","))
                 let band = m.coverage.map { "\($0)" } ?? "n/a"
                 print("[Prices \(target.rawValue) \(horizon) bars \(model.name)] windows \(m.windows), MAE \(m.mae) vs last-value \(m.baselineMAE) (skill \(m.skill)), coverage \(band); net move: direction \(m.direction) (price rose in \(m.up)), moveCorr \(m.moveCorr), moveSize \(m.moveSize); stepCorr \(m.stepCorr)")
 
@@ -233,6 +243,13 @@ struct TimesFMPricesTests {
         let file = outputDirectory.appending(path: "prices_\(model.name.replacingOccurrences(of: " ", with: "_")).csv")
         try csv.write(to: file, atomically: true, encoding: .utf8)
         print("[Prices \(model.name)] wrote \(file.path)")
+
+        Self.summaryRows[model.name] = summary
+        let summaryHeader = "model,target,horizon,windows,mae,no_change_mae,skill,band_coverage,direction_correct,price_rose,move_corr,move_size,step_corr\n"
+        let summaryFile = outputDirectory.appending(path: "prices_summary.csv")
+        let summaryText = summaryHeader + Self.summaryRows.keys.sorted().flatMap { Self.summaryRows[$0]! }.joined(separator: "\n") + "\n"
+        try summaryText.write(to: summaryFile, atomically: true, encoding: .utf8)
+        print("[Prices \(model.name)] wrote \(summaryFile.path)")
 
         // Observed (fp32 rows; fp16 agrees to about 3 significant digits in MAE and within 0.002
         // in the correlations; windows: 236 one-day, 47 five-day; price rose in 52.5% of one-day
